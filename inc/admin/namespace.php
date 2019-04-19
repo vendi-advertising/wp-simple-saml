@@ -36,7 +36,23 @@ function get_config() {
 	$sp_base_url = trailingslashit( $sp_home_url ) . 'sso/';
 	$settings    = [];
 
-	try {
+	$transient_key = 'wp-simple-saml__idp_metadata';
+
+	//Attempt to load from the transient API
+	if(is_multisite()){
+		$settings = get_site_transient($transient_key);
+	}else{
+		$settings = get_transient($transient_key);
+	}
+
+	//If we've loaded something from the transient API, trust and return it
+	if( ! is_empty( $settings ) ) {
+		return $settings;
+	}
+
+	//The above didn't run, try to load from the file path
+	if( is_empty( $settings ) ) {
+
 		/**
 		 * Filters the XML metadata file for IdP authority
 		 *
@@ -44,24 +60,42 @@ function get_config() {
 		 */
 		$idp_xml_file = apply_filters( 'wpsimplesaml_idp_metadata_xml_path', '' );
 
-		if ( $idp_xml_file && file_exists( $idp_xml_file ) ) {
-			$settings = IdPMetadataParser::parseFileXML( $idp_xml_file );
+		//Use is_readable() on files instead of file_exists() because the
+		//former also performs the latter's check automatically.
+		//TODO: Possibly use both file_exists() but throw if is_readable() fails?
+		if ( $idp_xml_file && is_readable( $idp_xml_file ) ) {
+			try {
+				$settings = IdPMetadataParser::parseFileXML( $idp_xml_file );
+			} catch ( \Exception $e ) {
+				return new \WP_Error( 'invalid-idp-metadata', __( 'Invalid IdP XML metadata file', 'wp-simple-saml' ), [
+					'errors' => $e->getMessage(),
+				] );
+			}
+		}
+	}
+
+	//No settings loaded as an XML file, try direct XML
+	if( is_empty( $settings ) ) {
+
+		/**
+		 * Filters the XML metadata for IdP authority
+		 *
+		 * @return string XML string for IdP metadata
+		 */
+		$idp_xml  = trim( apply_filters( 'wpsimplesaml_idp_metadata_xml', '' ) );
+		if ( $idp_xml ) {
+			try {
+				$settings = IdPMetadataParser::parseXML( $idp_xml );
+			} catch ( \Exception $e ) {
+				return new \WP_Error( 'invalid-idp-metadata', __( 'Invalid IdP XML metadata', 'wp-simple-saml' ), [
+					'errors' => $e->getMessage(),
+				] );
+			}
 		}
 
-		if ( empty( $idp_xml_file ) ) {
-			/**
-			 * Filters the XML metadata for IdP authority
-			 *
-			 * @return string XML string for IdP metadata
-			 */
-			$idp_xml  = trim( apply_filters( 'wpsimplesaml_idp_metadata_xml', '' ) );
-			$settings = IdPMetadataParser::parseXML( $idp_xml );
-		}
-	} catch ( \Exception $e ) {
-		return new \WP_Error( 'invalid-idp-metadata', __( 'Invalid IdP XML metadata', 'wp-simple-saml' ), [
-			'errors' => $e->getMessage(),
-		] );
 	}
+
+	//As long as nothing above fails, run the settings through the raw PHP array filter
 
 	/**
 	 * Filters the XML metadata array for IdP authority
@@ -84,6 +118,12 @@ function get_config() {
 		],
 		'NameIDFormat'             => 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
 	];
+
+	if(is_multisite()){
+		set_site_transient($transient_key, $settings);
+	}else{
+		set_transient($transient_key, $settings);
+	}
 
 	return $settings;
 }
