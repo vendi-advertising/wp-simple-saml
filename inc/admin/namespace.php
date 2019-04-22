@@ -63,7 +63,7 @@ function get_config() {
 		//The code after this block could accidentally hide deleted/unreadables files
 		//and cause massive developer headaches. If the developer requests debug
 		//mode, we can hopefully at least trap errors here.
-		if( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+		if( get_sso_settings( 'sso_debug' ) || ( defined( 'WP_DEBUG' ) && WP_DEBUG ) ) {
 
 			if( ! file_exists( $idp_xml_file ) ) {
 				return new \WP_Error( 'invalid-idp-metadata', __( 'IdP XML metadata file not found', 'wp-simple-saml' ), [
