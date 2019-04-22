@@ -60,10 +60,26 @@ function get_config() {
 		 */
 		$idp_xml_file = apply_filters( 'wpsimplesaml_idp_metadata_xml_path', '' );
 
-		//Use is_readable() on files instead of file_exists() because the
-		//former also performs the latter's check automatically.
-		//TODO: Possibly use both file_exists() but throw if is_readable() fails?
-		if ( $idp_xml_file && is_readable( $idp_xml_file ) ) {
+		//The code after this block could accidentally hide deleted/unreadables files
+		//and cause massive developer headaches. If the developer requests debug
+		//mode, we can hopefully at least trap errors here.
+		if( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+
+			if( ! file_exists( $idp_xml_file ) ) {
+				return new \WP_Error( 'invalid-idp-metadata', __( 'IdP XML metadata file not found', 'wp-simple-saml' ), [
+					'errors' => $e->getMessage(),
+				] );
+			}
+
+			if( ! is_readable( $idp_xml_file ) ) {
+				return new \WP_Error( 'invalid-idp-metadata', __( 'IdP XML metadata file found but not readable', 'wp-simple-saml' ), [
+					'errors' => $e->getMessage(),
+				] );
+			}
+		}
+
+		//NOTE: Developers, take notice of the block before this for troubleshooting purposes.
+		if ( is_file( $idp_xml_file ) && is_readable( $idp_xml_file ) ) {
 			try {
 				$settings = IdPMetadataParser::parseFileXML( $idp_xml_file );
 			} catch ( \Exception $e ) {
@@ -104,7 +120,7 @@ function get_config() {
 	 */
 	$settings = apply_filters( 'wpsimplesaml_idp_metadata', $settings );
 
-	if ( empty( $settings ) ) {
+	if ( is_empty( $settings ) ) {
 		return [];
 	}
 
